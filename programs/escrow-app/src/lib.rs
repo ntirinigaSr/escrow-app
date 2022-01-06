@@ -9,7 +9,47 @@ declare_id!("DcDKhEcU5gn8vFsL1ojkxKwZHzEdPueZEVyVaZVzUJvD");
 #[program]
 pub mod escrow_app {
     use super::*;
-    pub fn initialize(ctx: Context<Initialize>) -> ProgramResult {
+
+    const ESCROW_PDA_SEED: &[u8] = b"escrow";
+
+    pub fn initialize(
+        ctx: Context<Initialize>,
+        _vault_account_bump: u8,
+        initializer_amount: u64,
+        taker_amount: u64
+    ) -> ProgramResult {
+
+        ctx.accounts
+            .escrow_account
+            .initializer_key = *ctx
+            .accounts
+            .initializer
+            .key;
+
+        ctx.accounts
+            .escrow_account
+            .initializer_deposit_token_account = *ctx
+            .accounts
+            .initializer_deposit_token_account
+            .to_account_info()
+            .key;
+        
+        ctx.accounts.escrow_account.initializer_amount = initializer_amount;
+        ctx.accounts.escrow_account.taker_amount = taker_amount;
+
+        let (vault_authority, _vault_account_bump) = 
+            Pubkey::find_program_address(&[ESCROW_PDA_SEED], ctx.program_id);
+        
+        token::set_authority(
+            ctx.accounts.into_set_authority_context(),
+            AuthorityType::AccountOwner,
+            Some(vault_authority)
+        )?;
+
+        token::transfer(
+            ctx.accounts.into_transfer_to_pda_context(),
+            ctx.accounts.escrow_account.initializer_amount
+        )?;
         Ok(())
     }
 }
@@ -96,3 +136,48 @@ pub struct EscrowAccount{
     pub initializer_amount : u64,
     pub taker_amount: u64
 }
+
+
+
+impl<'info> Initialize<'info>{
+
+    fn into_transfer_to_pda_context(&self)-> CpiContext<'_, '_, '_, 'info, Transfer<'info>>{
+        let cpi_accounts = Transfer{
+            from: self.initializer_deposit_token_account.to_account_info().clone(),
+            to: self.vault_account.to_account_info().clone(),
+            authority: self.initializer.clone()
+        };
+
+        CpiContext::new(self.token_program.clone(), cpi_accounts)
+    }
+    
+    fn into_set_authority_context(&self) -> CpiContext<'_, '_, '_, 'info, SetAuthority<'info>>{
+        let cpi_accounts = SetAuthority{
+            account_or_mint: self.vault_account.to_account_info().clone(),
+            current_authority: self.initializer.clone()
+        };
+
+        CpiContext::new(self.token_program.clone(), cpi_accounts)
+    }
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
