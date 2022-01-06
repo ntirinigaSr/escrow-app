@@ -52,6 +52,29 @@ pub mod escrow_app {
         )?;
         Ok(())
     }
+
+    pub fn cancel(ctx: Context<Cancel>) -> ProgramResult{
+
+        let (_vault_authority, vault_authority_bump) = 
+         Pubkey::find_program_address(&[ESCROW_PDA_SEED], ctx.program_id);
+        
+        let authority_seeds = &[&ESCROW_PDA_SEED[..], &[vault_authority_bump]];
+
+        token::transfer(
+        ctx.accounts
+             .into_transfer_to_initializer_context()
+             .with_signer(&[&authority_seeds[..]]), 
+            ctx.accounts.escrow_account.initializer_amount
+        )?;
+
+        token::close_account(
+            ctx.accounts
+            .into_close_context().with_signer(&[&authority_seeds[..]])
+        )?;
+
+
+        Ok(())
+    }
 }
 
 
@@ -158,6 +181,35 @@ impl<'info> Initialize<'info>{
         };
 
         CpiContext::new(self.token_program.clone(), cpi_accounts)
+    }
+
+}
+
+
+impl<'info> Cancel<'info>{
+
+    fn into_transfer_to_initializer_context(
+        &self
+    ) -> CpiContext<'_, '_, '_, 'info, Transfer<'info>>{
+        let cpi_accounts = Transfer{
+            from: self.vault_account.to_account_info().clone(),
+            to: self.initializer_deposit_token_account.to_account_info().clone(),
+            authority: self.vault_authority.clone()
+        };
+
+        CpiContext::new(self.token_program.clone(), cpi_accounts)
+    }
+    
+    fn into_close_context(
+        &self
+    ) -> CpiContext<'_, '_, '_, 'info, CloseAccount<'info>>{
+        let cpi_accounts = CloseAccount{
+            account: self.vault_account.to_account_info().clone(),
+            destination: self.initializer.clone(),
+            authority: self.vault_authority.clone(),
+        };
+
+        CpiContext::new(self.token_program.clone(),cpi_accounts)
     }
 
 }
